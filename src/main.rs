@@ -1,11 +1,15 @@
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use esp_idf_svc::log::EspLogger;
 use log::info;
 
-use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType};
+use slint::platform::software_renderer::{
+    MinimalSoftwareWindow, RepaintBufferType, Rgb565Pixel,
+};
 use slint::platform::{Platform, PlatformError};
+use slint::{PhysicalSize, WindowSize};
 
 slint::include_modules!();
 
@@ -32,8 +36,10 @@ fn main() {
 
     info!("Initializing Slint platform");
 
+    let window = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
+
     let platform = EspPlatform {
-        window: MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer),
+        window: window.clone(),
         start: Instant::now(),
     };
 
@@ -41,8 +47,26 @@ fn main() {
 
     info!("Starting Slint integration test");
 
+    window.set_size(WindowSize::Physical(PhysicalSize::new(320, 240)));
+
     let app = App::new().expect("failed to create Slint app");
     app.set_counter(1);
+    app.show().expect("failed to show app");
 
     info!("Slint UI object created successfully");
+
+    let framebuffer = RefCell::new(vec![Rgb565Pixel(0); 320 * 240]);
+
+    window.draw_if_needed(|renderer| {
+        renderer.render(framebuffer.borrow_mut().as_mut_slice(), 320);
+    });
+
+    let fb = framebuffer.borrow();
+
+    info!("Rendered first frame");
+    info!("Framebuffer size: {} pixels", fb.len());
+    info!(
+        "First pixels: {:04x} {:04x} {:04x} {:04x}",
+        fb[0].0, fb[1].0, fb[2].0, fb[3].0
+    );
 }
