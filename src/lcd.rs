@@ -30,6 +30,19 @@ pub struct Lcd {
 }
 
 impl Lcd {
+    pub fn set_direction_landscape(&mut self) -> anyhow::Result<()> {
+        unsafe {
+            let madctl = [0x60u8];
+            esp!(esp_lcd_panel_io_tx_param(
+                self._io,
+                0x36,
+                madctl.as_ptr() as *const c_void,
+                1
+            ))?;
+        }
+        Ok(())
+    }
+
     pub fn new() -> Result<Self> {
         unsafe {
             let mut gpio_init: gpio_config_t = zeroed();
@@ -104,11 +117,11 @@ impl Lcd {
             esp!(esp_lcd_panel_invert_color(panel, true))?;
             esp!(esp_lcd_panel_set_gap(panel, 0, 0))?;
 
-            let madctl = [0x00u8];
+            let pixfmt = [0x65u8];
             esp!(esp_lcd_panel_io_tx_param(
                 io,
-                0x36,
-                madctl.as_ptr() as *const c_void,
+                0x3A,
+                pixfmt.as_ptr() as *const c_void,
                 1
             ))?;
 

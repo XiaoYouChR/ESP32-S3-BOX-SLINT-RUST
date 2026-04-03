@@ -81,6 +81,9 @@ fn main() {
         .set_lcd_backlight(true)
         .expect("failed to enable backlight");
 
+    lcd.set_direction_landscape()
+        .expect("failed to set lcd direction");
+
     lcd.flush_rgb565(LCD_H_RES, LCD_V_RES, raw)
         .expect("failed to flush framebuffer");
 
