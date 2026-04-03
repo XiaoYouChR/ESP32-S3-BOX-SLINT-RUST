@@ -31,6 +31,7 @@ pub struct Lcd {
 
 impl Lcd {
     pub fn set_direction_landscape(&mut self) -> anyhow::Result<()> {
+        // 0x60, 0xA0, 0x20, 0xE0, 0x68, 0xA8
         unsafe {
             let madctl = [0x60u8];
             esp!(esp_lcd_panel_io_tx_param(
