@@ -24,6 +24,9 @@ pub const CTP_RST_IO: u16 = 0x0040;
 pub const LCD_BL_IO: u16 = 0x0080;
 pub const LEDR_IO: u16 = 0x0100;
 pub const CTP_INT_IO: u16 = 0x0200;
+pub const CHSC5432_ADDR: u8 = 0x2E;
+pub const CHSC5XXX_CTRL_REG: u32 = 0x2000_002C;
+pub const CHSC5XXX_PID_REG: u32 = 0x2000_0080;
 
 pub struct Xl9555 {
     i2c: I2cDriver<'static>,
@@ -103,6 +106,20 @@ impl Xl9555 {
 
     pub fn set_lcd_backlight(&mut self, on: bool) -> Result<()> {
         self.pin_write(LCD_BL_IO, on)?;
+        Ok(())
+    }
+
+    pub fn set_touch_reset(&mut self, on: bool) -> Result<()> {
+        self.pin_write(CTP_RST_IO, on)?;
+        Ok(())
+    }
+
+    pub fn chsc5xxx_read_reg(&mut self, reg: u32, buf: &mut [u8]) -> Result<()> {
+        // 这里先按大端寄存器地址发送：
+        // 0x2000002C -> [0x20, 0x00, 0x00, 0x2C]
+        // 如果后面读不到有效数据，再试 to_le_bytes()
+        let addr = reg.to_be_bytes();
+        self.i2c.write_read(CHSC5432_ADDR, &addr, buf, u32::MAX)?;
         Ok(())
     }
 }
