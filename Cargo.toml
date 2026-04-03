@@ -5,6 +5,7 @@ authors = ["XiaoYouChR <xiaoyouchr@outlook.com>"]
 edition = "2021"
 resolver = "2"
 rust-version = "1.82"
+build = "build.rs"
 
 [[bin]]
 name = "box-slint-demo"
@@ -22,6 +23,13 @@ log = "0.4"
 esp-idf-svc = { version = "0.52.1", features = ["critical-section", "embassy-time-driver", "embassy-sync"] }
 # Remove `generic-queue-8` if you plan to use `embassy-time` WITH `embassy-executor`
 embassy-time = { version = "0.5", features = ["generic-queue-8"] }
+slint = { version = "1.15.1", default-features = false, features = [
+    "compat-1-2",
+    "unsafe-single-threaded",
+    "libm",
+    "renderer-software",
+] }
 
 [build-dependencies]
 embuild = "0.33"
+slint-build = "1.15.1"
