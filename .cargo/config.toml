@@ -1,0 +1,22 @@
+[build]
+target = "xtensa-esp32s3-espidf"
+target-dir = "C:/t/box"
+
+[target.'cfg(target_os = "espidf")']
+linker = "ldproxy"
+runner = "espflash flash --monitor"
+rustflags = [ "--cfg",  "espidf_time64"]
+
+[unstable]
+build-std = ["std", "panic_abort"]
+
+[env]
+MCU = "esp32s3"
+ESP_IDF_VERSION = "v5.5.3"
+ESP_IDF_TOOLS_INSTALL_DIR = "custom:C:\\e"
+ESP_IDF_PATH_ISSUES="warn"
+
+
+# Uncomment this if you have moved the target dir by setting CARGO_TARGET_DIR or similar.
+# Required for now due to embuild limitations.
+#CARGO_WORKSPACE_DIR = { value = "", relative = true }
