@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
@@ -45,28 +44,23 @@ fn main() {
 
     slint::platform::set_platform(Box::new(platform)).expect("failed to set Slint platform");
 
-    info!("Starting Slint integration test");
-
     window.set_size(WindowSize::Physical(PhysicalSize::new(320, 240)));
 
     let app = App::new().expect("failed to create Slint app");
     app.set_counter(1);
     app.show().expect("failed to show app");
 
-    info!("Slint UI object created successfully");
+    info!("Rendering first frame");
 
-    let framebuffer = RefCell::new(vec![Rgb565Pixel(0); 320 * 240]);
+    let mut framebuffer = vec![Rgb565Pixel(0); 320 * 240];
 
     window.draw_if_needed(|renderer| {
-        renderer.render(framebuffer.borrow_mut().as_mut_slice(), 320);
+        renderer.render(framebuffer.as_mut_slice(), 320);
     });
 
-    let fb = framebuffer.borrow();
+    info!("Rendered first frame OK");
 
-    info!("Rendered first frame");
-    info!("Framebuffer size: {} pixels", fb.len());
-    info!(
-        "First pixels: {:04x} {:04x} {:04x} {:04x}",
-        fb[0].0, fb[1].0, fb[2].0, fb[3].0
-    );
+    loop {
+        std::thread::sleep(Duration::from_secs(1));
+    }
 }
