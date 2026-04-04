@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use esp_idf_svc::hal::peripherals::Peripherals;
-use slint::platform::software_renderer::{MinimalSoftwareWindow, Rgb565Pixel};
+use slint::platform::software_renderer::{MinimalSoftwareWindow, PhysicalRegion, Rgb565Pixel};
 use slint::{PhysicalSize, WindowSize};
 
 use crate::app::App;
@@ -67,14 +67,14 @@ impl Board {
             }
         }
 
-        let mut rendered = false;
+        let mut dirty_region = None;
 
         self.window.draw_if_needed(|renderer| {
-            renderer.render(self.framebuffer.as_mut_slice(), LCD_H_RES as usize);
-            rendered = true;
+            let region = renderer.render(self.framebuffer.as_mut_slice(), LCD_H_RES as usize);
+            dirty_region = Some(region);
         });
 
-        if rendered {
+        if let Some(region) = dirty_region {
             let raw: &[u16] = unsafe {
                 core::slice::from_raw_parts(
                     self.framebuffer.as_ptr() as *const u16,
@@ -82,7 +82,26 @@ impl Board {
                 )
             };
 
-            self.lcd.flush_rgb565(LCD_H_RES, LCD_V_RES, raw)?;
+            self.flush_dirty_region(region, raw)?;
+        }
+
+        Ok(())
+    }
+
+    fn flush_dirty_region(&mut self, region: PhysicalRegion, framebuffer: &[u16]) -> Result<()> {
+        for (origin, size) in region.iter() {
+            if size.width == 0 || size.height == 0 {
+                continue;
+            }
+
+            self.lcd.flush_rect_rgb565(
+                origin.x as u16,
+                origin.y as u16,
+                size.width as u16,
+                size.height as u16,
+                LCD_H_RES as usize,
+                framebuffer,
+            )?;
         }
 
         Ok(())

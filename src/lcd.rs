@@ -7,6 +7,7 @@ use esp_idf_svc::sys::*;
 
 pub const LCD_H_RES: u16 = 320;
 pub const LCD_V_RES: u16 = 240;
+const LCD_PCLK_HZ: u32 = 10_000_000;
 
 const LCD_NUM_CS: i32 = 1;
 const LCD_NUM_DC: i32 = 2;
@@ -88,7 +89,7 @@ impl Lcd {
 
             let mut io_config: esp_lcd_panel_io_i80_config_t = zeroed();
             io_config.cs_gpio_num = LCD_NUM_CS;
-            io_config.pclk_hz = 10_000_000;
+            io_config.pclk_hz = LCD_PCLK_HZ;
             io_config.trans_queue_depth = 10;
             io_config.on_color_trans_done = None;
             io_config.user_ctx = ptr::null_mut();
@@ -144,21 +145,69 @@ impl Lcd {
         }
     }
 
-    pub fn flush_rgb565(&mut self, width: u16, height: u16, pixels: &[u16]) -> Result<()> {
-        let need = width as usize * height as usize;
-        if pixels.len() < need {
-            bail!("framebuffer too small: {} < {}", pixels.len(), need);
+    pub fn flush_rect_rgb565(
+        &mut self,
+        x: u16,
+        y: u16,
+        width: u16,
+        height: u16,
+        stride_pixels: usize,
+        pixels: &[u16],
+    ) -> Result<()> {
+        if width == 0 || height == 0 {
+            return Ok(());
+        }
+
+        let x_end = x as usize + width as usize;
+        let y_end = y as usize + height as usize;
+        if x_end > stride_pixels {
+            bail!(
+                "flush rect exceeds stride: x={} width={} stride={}",
+                x,
+                width,
+                stride_pixels
+            );
+        }
+
+        let needed_len = y_end
+            .checked_mul(stride_pixels)
+            .and_then(|v| v.checked_sub(stride_pixels - x_end))
+            .unwrap_or(usize::MAX);
+        if pixels.len() < needed_len {
+            bail!(
+                "framebuffer too small for rect flush: {} < {}",
+                pixels.len(),
+                needed_len
+            );
         }
 
         unsafe {
-            esp!(esp_lcd_panel_draw_bitmap(
-                self.panel,
-                0,
-                0,
-                width as i32,
-                height as i32,
-                pixels.as_ptr() as *const c_void,
-            ))?;
+            if x == 0 && width as usize == stride_pixels {
+                let start = y as usize * stride_pixels;
+                let len = width as usize * height as usize;
+                esp!(esp_lcd_panel_draw_bitmap(
+                    self.panel,
+                    x as i32,
+                    y as i32,
+                    (x + width) as i32,
+                    (y + height) as i32,
+                    pixels[start..start + len].as_ptr() as *const c_void,
+                ))?;
+            } else {
+                for row in 0..height as usize {
+                    let start = (y as usize + row) * stride_pixels + x as usize;
+                    let end = start + width as usize;
+
+                    esp!(esp_lcd_panel_draw_bitmap(
+                        self.panel,
+                        x as i32,
+                        (y as usize + row) as i32,
+                        (x + width) as i32,
+                        (y as usize + row + 1) as i32,
+                        pixels[start..end].as_ptr() as *const c_void,
+                    ))?;
+                }
+            }
         }
 
         Ok(())

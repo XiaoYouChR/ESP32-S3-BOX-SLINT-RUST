@@ -12,6 +12,8 @@ use log::info;
 use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType};
 use slint::platform::{Platform, PlatformError};
 
+const MAIN_LOOP_SLEEP_MS: u64 = 2;
+
 struct EspPlatform {
     window: Rc<MinimalSoftwareWindow>,
     start: Instant,
@@ -35,7 +37,7 @@ fn main() {
 
     info!("Booting...");
 
-    let window = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
+    let window = MinimalSoftwareWindow::new(RepaintBufferType::ReusedBuffer);
 
     slint::platform::set_platform(Box::new(EspPlatform {
         window: window.clone(),
@@ -50,6 +52,6 @@ fn main() {
 
     loop {
         board.tick(&app).expect("board tick failed");
-        std::thread::sleep(Duration::from_millis(10));
+        std::thread::sleep(Duration::from_millis(MAIN_LOOP_SLEEP_MS));
     }
 }
