@@ -2,16 +2,19 @@ use anyhow::Result;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
+use log::info;
 use slint::platform::software_renderer::MinimalSoftwareWindow;
-use slint::platform::{PointerEventButton, WindowEvent, WindowAdapter};
-use slint::LogicalPosition;
+use slint::platform::{PointerEventButton, WindowAdapter, WindowEvent};
+use slint::{LogicalPosition, SharedString};
 
+use crate::app::App;
 use crate::lcd::{LCD_H_RES, LCD_V_RES};
 use crate::xl9555::{Xl9555, CHSC5XXX_CTRL_REG, CHSC5XXX_PID_REG};
 
 const TOUCH_READ_LEN: usize = 28;
 const MOVE_THRESHOLD: i16 = 2;
-const RELEASE_DEBOUNCE_MS: u64 = 20;
+const TAP_SLOP: i16 = 10;
+const LONG_PRESS_MS: u64 = 500;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TouchState {
@@ -27,18 +30,26 @@ pub struct TouchPoint {
 
 pub struct Touch {
     state: TouchState,
-    last_point: Option<TouchPoint>,
-    throttle: u8,
-    last_release_check: Instant,
+    current_point: Option<TouchPoint>,
+    last_dispatch_point: Option<TouchPoint>,
+    press_origin: Option<TouchPoint>,
+    press_started_at: Option<Instant>,
+    long_press_reported: bool,
+    tap_canceled: bool,
+    drag_active: bool,
 }
 
 impl Touch {
     pub fn new() -> Self {
         Self {
             state: TouchState::Idle,
-            last_point: None,
-            throttle: 0,
-            last_release_check: Instant::now(),
+            current_point: None,
+            last_dispatch_point: None,
+            press_origin: None,
+            press_started_at: None,
+            long_press_reported: false,
+            tap_canceled: false,
+            drag_active: false,
         }
     }
 
@@ -58,39 +69,52 @@ impl Touch {
         &mut self,
         bus: &mut Xl9555,
         window: &Rc<MinimalSoftwareWindow>,
+        app: &App,
     ) -> Result<()> {
-        self.throttle = self.throttle.wrapping_add(1);
-        if (self.throttle % 5) != 0 && self.throttle >= 5 {
-            return Ok(());
-        }
-
         let sample = self.read_sample(bus)?;
 
         match (self.state, sample) {
             (TouchState::Idle, Some(point)) => {
                 self.dispatch_pressed(window, point);
                 self.state = TouchState::Pressed;
-                self.last_point = Some(point);
-                self.throttle = 0;
+                self.current_point = Some(point);
+                self.last_dispatch_point = Some(point);
+                self.press_origin = Some(point);
+                self.press_started_at = Some(Instant::now());
+                self.long_press_reported = false;
+                self.tap_canceled = false;
+                self.drag_active = false;
             }
 
             (TouchState::Pressed, Some(point)) => {
-                if self.should_send_move(point) {
-                    self.dispatch_moved(window, point);
-                    self.last_point = Some(point);
+                self.current_point = Some(point);
+
+                if self.moved_past_tap_slop(point) {
+                    self.tap_canceled = true;
+                    self.drag_active = true;
                 }
-                self.throttle = 0;
+
+                if self.should_report_long_press(point) {
+                    self.long_press_reported = true;
+                    self.tap_canceled = true;
+                    self.report_long_press(app, point);
+                }
+
+                if self.drag_active && self.should_send_move(point) {
+                    self.dispatch_moved(window, point);
+                    self.last_dispatch_point = Some(point);
+                }
             }
 
             (TouchState::Pressed, None) => {
-                if self.last_release_check.elapsed() >= Duration::from_millis(RELEASE_DEBOUNCE_MS) {
-                    if let Some(point) = self.last_point {
+                if let Some(point) = self.current_point {
+                    if self.tap_canceled {
+                        self.dispatch_canceled_release(window, point);
+                    } else {
                         self.dispatch_released(window, point);
                     }
-                    self.state = TouchState::Idle;
-                    self.last_point = None;
-                    self.last_release_check = Instant::now();
                 }
+                self.reset_tracking();
             }
 
             (TouchState::Idle, None) => {}
@@ -121,7 +145,7 @@ impl Touch {
     }
 
     fn should_send_move(&self, point: TouchPoint) -> bool {
-        match self.last_point {
+        match self.last_dispatch_point {
             None => true,
             Some(last) => {
                 let dx = point.x as i16 - last.x as i16;
@@ -129,6 +153,46 @@ impl Touch {
                 dx.abs() >= MOVE_THRESHOLD || dy.abs() >= MOVE_THRESHOLD
             }
         }
+    }
+
+    fn moved_past_tap_slop(&self, point: TouchPoint) -> bool {
+        match self.press_origin {
+            None => false,
+            Some(origin) => {
+                let dx = point.x as i16 - origin.x as i16;
+                let dy = point.y as i16 - origin.y as i16;
+                dx.abs() >= TAP_SLOP || dy.abs() >= TAP_SLOP
+            }
+        }
+    }
+
+    fn should_report_long_press(&self, point: TouchPoint) -> bool {
+        !self.long_press_reported
+            && !self.moved_past_tap_slop(point)
+            && self
+                .press_started_at
+                .is_some_and(|started| started.elapsed() >= Duration::from_millis(LONG_PRESS_MS))
+    }
+
+    fn report_long_press(&self, app: &App, point: TouchPoint) {
+        let count = app.get_long_press_count().saturating_add(1);
+        app.set_long_press_count(count);
+        app.set_last_gesture(SharedString::from(format!(
+            "Long press @ ({}, {})",
+            point.x, point.y
+        )));
+        info!("touch long press at ({}, {})", point.x, point.y);
+    }
+
+    fn reset_tracking(&mut self) {
+        self.state = TouchState::Idle;
+        self.current_point = None;
+        self.last_dispatch_point = None;
+        self.press_origin = None;
+        self.press_started_at = None;
+        self.long_press_reported = false;
+        self.tap_canceled = false;
+        self.drag_active = false;
     }
 
     fn dispatch_pressed(&self, window: &Rc<MinimalSoftwareWindow>, point: TouchPoint) {
@@ -148,9 +212,16 @@ impl Touch {
 
     fn dispatch_released(&self, window: &Rc<MinimalSoftwareWindow>, point: TouchPoint) {
         let pos = LogicalPosition::new(point.x as f32, point.y as f32);
-        window.window().dispatch_event(WindowEvent::PointerReleased {
-            position: pos,
-            button: PointerEventButton::Left,
-        });
+        window
+            .window()
+            .dispatch_event(WindowEvent::PointerReleased {
+                position: pos,
+                button: PointerEventButton::Left,
+            });
+    }
+
+    fn dispatch_canceled_release(&self, window: &Rc<MinimalSoftwareWindow>, point: TouchPoint) {
+        window.window().dispatch_event(WindowEvent::PointerExited);
+        self.dispatch_released(window, point);
     }
 }

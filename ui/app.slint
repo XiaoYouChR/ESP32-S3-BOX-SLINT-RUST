@@ -3,6 +3,8 @@ export component App inherits Window {
     height: 240px;
 
     in-out property <int> counter: 0;
+    in-out property <int> long-press-count: 0;
+    in-out property <string> last-gesture: "Idle";
     in-out property <length> dot-x: 160px;
     in-out property <length> dot-y: 120px;
 
@@ -17,6 +19,7 @@ export component App inherits Window {
 
             clicked => {
                 root.counter += 1;
+                root.last-gesture = "Click";
             }
         }
 
@@ -30,11 +33,19 @@ export component App inherits Window {
         }
 
         Text {
-            text: "Counter: " + root.counter;
+            text: "Clicks: " + root.counter + "  Long: " + root.long-press-count;
             color: white;
-            font-size: 20px;
+            font-size: 18px;
             x: 10px;
             y: 10px;
+        }
+
+        Text {
+            text: "Last: " + root.last-gesture;
+            color: #d1d5db;
+            font-size: 16px;
+            x: 10px;
+            y: 34px;
         }
     }
 }

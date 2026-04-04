@@ -46,10 +46,10 @@ impl Board {
         })
     }
 
-    pub fn tick(&mut self, _app: &App) -> Result<()> {
+    pub fn tick(&mut self, app: &App) -> Result<()> {
         slint::platform::update_timers_and_animations();
 
-        self.touch.poll(&mut self.xl9555, &self.window)?;
+        self.touch.poll(&mut self.xl9555, &self.window, app)?;
 
         let mut rendered = false;
 
