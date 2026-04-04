@@ -12,7 +12,7 @@ use log::info;
 use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType};
 use slint::platform::{Platform, PlatformError};
 
-const MAIN_LOOP_SLEEP_MS: u64 = 2;
+const MAIN_LOOP_SLEEP_MS: u64 = 1;
 
 struct EspPlatform {
     window: Rc<MinimalSoftwareWindow>,

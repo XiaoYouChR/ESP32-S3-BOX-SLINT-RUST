@@ -7,7 +7,8 @@ use esp_idf_svc::sys::*;
 
 pub const LCD_H_RES: u16 = 320;
 pub const LCD_V_RES: u16 = 240;
-const LCD_PCLK_HZ: u32 = 10_000_000;
+const LCD_PCLK_HZ: u32 = 20_000_000;
+const LCD_TRANS_QUEUE_DEPTH: usize = 20;
 
 const LCD_NUM_CS: i32 = 1;
 const LCD_NUM_DC: i32 = 2;
@@ -90,7 +91,7 @@ impl Lcd {
             let mut io_config: esp_lcd_panel_io_i80_config_t = zeroed();
             io_config.cs_gpio_num = LCD_NUM_CS;
             io_config.pclk_hz = LCD_PCLK_HZ;
-            io_config.trans_queue_depth = 10;
+            io_config.trans_queue_depth = LCD_TRANS_QUEUE_DEPTH;
             io_config.on_color_trans_done = None;
             io_config.user_ctx = ptr::null_mut();
             io_config.lcd_cmd_bits = 8;
