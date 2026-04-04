@@ -12,7 +12,8 @@ use log::info;
 use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType};
 use slint::platform::{Platform, PlatformError};
 
-const MAIN_LOOP_SLEEP_MS: u64 = 1;
+const MAIN_LOOP_BUSY_SLEEP_MS: u64 = 1;
+const MAIN_LOOP_IDLE_SLEEP_MS: u64 = 5;
 
 struct EspPlatform {
     window: Rc<MinimalSoftwareWindow>,
@@ -51,7 +52,13 @@ fn main() {
     info!("Entering main loop");
 
     loop {
-        board.tick(&app).expect("board tick failed");
-        std::thread::sleep(Duration::from_millis(MAIN_LOOP_SLEEP_MS));
+        let rendered = board.tick(&app).expect("board tick failed");
+        if rendered {
+            // `yield_now()` may reschedule us immediately and still starve IDLE0 on long drags.
+            // std::thread::sleep(Duration::from_millis(MAIN_LOOP_BUSY_SLEEP_MS));
+            std::thread::yield_now();
+        } else {
+            std::thread::sleep(Duration::from_millis(MAIN_LOOP_IDLE_SLEEP_MS));
+        }
     }
 }
