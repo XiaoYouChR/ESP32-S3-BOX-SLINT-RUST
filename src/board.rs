@@ -1,4 +1,5 @@
 use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use esp_idf_svc::hal::peripherals::Peripherals;
@@ -10,12 +11,15 @@ use crate::lcd::{Lcd, LCD_H_RES, LCD_V_RES};
 use crate::touch::Touch;
 use crate::xl9555::Xl9555;
 
+const TOUCH_IDLE_FALLBACK_MS: u64 = 50;
+
 pub struct Board {
     pub window: Rc<MinimalSoftwareWindow>,
     lcd: Lcd,
     xl9555: Xl9555,
     touch: Touch,
     framebuffer: Vec<Rgb565Pixel>,
+    last_touch_idle_poll: Instant,
 }
 
 impl Board {
@@ -43,13 +47,25 @@ impl Board {
             xl9555,
             touch,
             framebuffer,
+            last_touch_idle_poll: Instant::now(),
         })
     }
 
     pub fn tick(&mut self, app: &App) -> Result<()> {
         slint::platform::update_timers_and_animations();
 
-        self.touch.poll(&mut self.xl9555, &self.window, app)?;
+        let touch_active = self.touch.is_active();
+        let touch_irq = self.xl9555.take_touch_interrupt()?;
+        let idle_fallback_due = !touch_active
+            && self.last_touch_idle_poll.elapsed() >= Duration::from_millis(TOUCH_IDLE_FALLBACK_MS);
+
+        if touch_active || touch_irq || idle_fallback_due {
+            self.touch.poll(&mut self.xl9555, &self.window, app)?;
+
+            if !self.touch.is_active() {
+                self.last_touch_idle_poll = Instant::now();
+            }
+        }
 
         let mut rendered = false;
 

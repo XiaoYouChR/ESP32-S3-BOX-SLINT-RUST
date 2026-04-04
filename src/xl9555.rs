@@ -1,7 +1,12 @@
 use anyhow::Result;
+use core::sync::atomic::{AtomicBool, Ordering};
+use esp_idf_svc::hal::gpio::{Input, InterruptType, PinDriver, Pull};
 use esp_idf_svc::hal::i2c::{I2cConfig, I2cDriver};
 use esp_idf_svc::hal::peripherals::Peripherals;
 use esp_idf_svc::hal::units::Hertz;
+
+const TOUCH_INT_ACTIVE_LEVEL: bool = false;
+static XL9555_IRQ_PENDING: AtomicBool = AtomicBool::new(false);
 
 pub const XL9555_ADDR: u8 = 0x20;
 
@@ -30,6 +35,7 @@ pub const CHSC5XXX_PID_REG: u32 = 0x2000_0080;
 
 pub struct Xl9555 {
     i2c: I2cDriver<'static>,
+    irq: PinDriver<'static, Input>,
 }
 
 impl Xl9555 {
@@ -44,11 +50,19 @@ impl Xl9555 {
             &config,
         )?;
 
-        let mut dev = Self { i2c };
+        let mut irq = PinDriver::input(peripherals.pins.gpio3, Pull::Up)?;
+        irq.set_interrupt_type(InterruptType::NegEdge)?;
+        unsafe {
+            irq.subscribe(|| {
+                XL9555_IRQ_PENDING.store(true, Ordering::Release);
+            })?;
+        }
+        irq.enable_interrupt()?;
+
+        let mut dev = Self { i2c, irq };
 
         // 上电先读一次，清中断标志
-        let mut r_data = [0u8; 2];
-        dev.read_regs(XL9555_INPUT_PORT0_REG, &mut r_data)?;
+        let _ = dev.read_input_state()?;
 
         // 厂家初始化：配置 IO 方向
         // 0xFE1B => P0=0x1B, P1=0xFE
@@ -71,9 +85,15 @@ impl Xl9555 {
         Ok(())
     }
 
-    fn read_regs(&mut self, reg: u8, data: &mut [u8; 2]) -> Result<()> {
+    fn read_regs(&mut self, reg: u8, data: &mut [u8]) -> Result<()> {
         self.i2c.write_read(XL9555_ADDR, &[reg], data, u32::MAX)?;
         Ok(())
+    }
+
+    pub fn read_input_state(&mut self) -> Result<u16> {
+        let mut data = [0u8; 2];
+        self.read_regs(XL9555_INPUT_PORT0_REG, &mut data)?;
+        Ok(((data[1] as u16) << 8) | data[0] as u16)
     }
 
     pub fn io_config(&mut self, value: u16) -> Result<()> {
@@ -112,6 +132,23 @@ impl Xl9555 {
     pub fn set_touch_reset(&mut self, on: bool) -> Result<()> {
         self.pin_write(CTP_RST_IO, on)?;
         Ok(())
+    }
+
+    pub fn take_touch_interrupt(&mut self) -> Result<bool> {
+        let pending = XL9555_IRQ_PENDING.swap(false, Ordering::AcqRel) || self.irq.is_low();
+        if !pending {
+            return Ok(false);
+        }
+
+        let inputs = self.read_input_state()?;
+        let touch_line_active = ((inputs & CTP_INT_IO) != 0) == TOUCH_INT_ACTIVE_LEVEL;
+
+        // PinDriver 会在 ISR 触发后自动关中断，这里在非 ISR 上下文重新打开。
+        self.irq.enable_interrupt()?;
+
+        // 只要 XL9555 确实给过一次 IRQ，我们就至少安排一次触摸扫描；
+        // CTP_INT_IO 低电平则说明触摸中断仍在当前时刻保持有效。
+        Ok(pending || touch_line_active)
     }
 
     pub fn chsc5xxx_read_reg(&mut self, reg: u32, buf: &mut [u8]) -> Result<()> {

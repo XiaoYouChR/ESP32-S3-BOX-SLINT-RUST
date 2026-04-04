@@ -123,6 +123,10 @@ impl Touch {
         Ok(())
     }
 
+    pub fn is_active(&self) -> bool {
+        self.state == TouchState::Pressed
+    }
+
     fn read_sample(&self, bus: &mut Xl9555) -> Result<Option<TouchPoint>> {
         let mut buf = [0u8; TOUCH_READ_LEN];
         bus.chsc5xxx_read_reg(CHSC5XXX_CTRL_REG, &mut buf)?;
