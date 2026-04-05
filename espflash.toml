@@ -1,0 +1,4 @@
+# Project-local espflash settings.
+# 921600 is an official example from espflash and is usually a good speed/stability balance
+# on ESP32-S3 boards over USB/UART.
+baudrate = 921600
