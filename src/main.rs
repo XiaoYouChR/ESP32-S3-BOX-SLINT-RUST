@@ -2,17 +2,19 @@ mod app;
 mod board;
 mod lcd;
 mod touch;
+mod wifi;
 mod xl9555;
 
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
+use esp_idf_svc::hal::peripherals::Peripherals;
 use esp_idf_svc::log::EspLogger;
 use log::info;
 use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType};
 use slint::platform::{Platform, PlatformError};
 
-const MAIN_LOOP_BUSY_SLEEP_MS: u64 = 1;
+// const MAIN_LOOP_BUSY_SLEEP_MS: u64 = 1;
 const MAIN_LOOP_IDLE_SLEEP_MS: u64 = 5;
 
 struct EspPlatform {
@@ -46,7 +48,16 @@ fn main() {
     }))
     .expect("failed to set Slint platform");
 
-    let mut board = board::Board::new(window).expect("failed to init board");
+    let peripherals = Peripherals::take().expect("failed to take peripherals");
+    let xl9555 = xl9555::Xl9555::new(
+        peripherals.i2c0,
+        peripherals.pins.gpio48,
+        peripherals.pins.gpio45,
+        peripherals.pins.gpio3,
+    )
+    .expect("failed to init xl9555");
+
+    let mut board = board::Board::new(window, xl9555).expect("failed to init board");
     let app = app::create_ui(&board.window).expect("failed to create ui");
 
     info!("Entering main loop");
@@ -54,7 +65,6 @@ fn main() {
     loop {
         let rendered = board.tick(&app).expect("board tick failed");
         if rendered {
-            // `yield_now()` may reschedule us immediately and still starve IDLE0 on long drags.
             // std::thread::sleep(Duration::from_millis(MAIN_LOOP_BUSY_SLEEP_MS));
             std::thread::yield_now();
         } else {

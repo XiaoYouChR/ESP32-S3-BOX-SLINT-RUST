@@ -1,7 +1,6 @@
 use std::rc::Rc;
 
 use anyhow::Result;
-use esp_idf_svc::hal::peripherals::Peripherals;
 use slint::platform::software_renderer::{MinimalSoftwareWindow, PhysicalRegion, Rgb565Pixel};
 use slint::{PhysicalSize, WindowSize};
 
@@ -18,15 +17,12 @@ pub struct Board {
 }
 
 impl Board {
-    pub fn new(window: Rc<MinimalSoftwareWindow>) -> Result<Self> {
-        let peripherals = Peripherals::take().unwrap();
-
+    pub fn new(window: Rc<MinimalSoftwareWindow>, mut xl9555: Xl9555) -> Result<Self> {
         window.set_size(WindowSize::Physical(PhysicalSize::new(
             LCD_H_RES.into(),
             LCD_V_RES.into(),
         )));
 
-        let mut xl9555 = Xl9555::new(peripherals)?;
         let mut lcd = Lcd::new()?;
 
         lcd.set_direction_landscape()?;

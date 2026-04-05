@@ -1,8 +1,7 @@
 use anyhow::Result;
 use core::sync::atomic::{AtomicBool, Ordering};
-use esp_idf_svc::hal::gpio::{Input, InterruptType, PinDriver, Pull};
-use esp_idf_svc::hal::i2c::{I2cConfig, I2cDriver};
-use esp_idf_svc::hal::peripherals::Peripherals;
+use esp_idf_svc::hal::gpio::{Input, InputPin, InterruptType, OutputPin, PinDriver, Pull};
+use esp_idf_svc::hal::i2c::{I2cConfig, I2cDriver, I2c};
 use esp_idf_svc::hal::units::Hertz;
 
 const TOUCH_INT_ACTIVE_LEVEL: bool = false;
@@ -39,18 +38,17 @@ pub struct Xl9555 {
 }
 
 impl Xl9555 {
-    pub fn new(peripherals: Peripherals) -> Result<Self> {
+    pub fn new<I2C: I2c + 'static>(
+        i2c0: I2C,
+        sda: impl InputPin + OutputPin + 'static,
+        scl: impl InputPin + OutputPin + 'static,
+        irq_pin: impl InputPin + 'static,
+    ) -> Result<Self> {
         let config = I2cConfig::new().baudrate(Hertz(400_000));
 
-        // 按你板子的资源表：SDA=GPIO48, SCL=GPIO45
-        let i2c = I2cDriver::new(
-            peripherals.i2c0,
-            peripherals.pins.gpio48,
-            peripherals.pins.gpio45,
-            &config,
-        )?;
+        let i2c = I2cDriver::new(i2c0, sda, scl, &config)?;
 
-        let mut irq = PinDriver::input(peripherals.pins.gpio3, Pull::Up)?;
+        let mut irq = PinDriver::input(irq_pin, Pull::Up)?;
         irq.set_interrupt_type(InterruptType::NegEdge)?;
         unsafe {
             irq.subscribe(|| {
